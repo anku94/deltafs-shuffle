@@ -927,7 +927,13 @@ shuffle_t shuffle_init(nexus_ctx_t nxp, char *funname,
   }
 
   myrank = nexus_global_rank(nxp);
-  shuffle_openlog(myrank);
+
+  if (so->rbuftarget == 1) {
+    shuffle_openlog(myrank);
+  }
+
+  mlog(SHUF_INFO, "----> LOG CANARY 1: %s <-----", funname);
+  notify(SHUF_INFO, "----> LOG CANARY 2: %s <-----", funname);
 
   mlog(SHUF_CALL,
        "shuffle_init maxrpc(lo/lr/r)=%d/%d/%d targ(lo/lr/r)=%d/%d/%d",
@@ -3107,6 +3113,59 @@ static void done_oq_flush(struct outqueue *oq) {
 }
 
 /*
+ * dumpstats_mod: dump stats to mlog NOTE
+ *
+ * @param sh the shuffle to dump
+ */
+static void dumpstats_mod(shuffle_t sh) {
+#ifdef SHUFFLE_COUNT
+  std::map<hg_addr_t,struct outqueue *>::iterator oqit;
+  const char *names[3] = { "local_origin", "local_relay", "remote" };
+  struct outset *o[3] = { &sh->local_orq, &sh->local_rlq, &sh->remoteq }, *os;
+  struct outqueue *oq;
+  int lcv;
+
+  mlog(SHUF_NOTE, "stat counter dump follows");
+  mlog(SHUF_NOTE, "deliver-thread: dblock=%d, delivery=%d", sh->cntdblock,
+       sh->cntdeliver);
+  mlog(SHUF_NOTE, "deliver: reqs=%d/%d, waits=%d/%d, mxwait=%d",
+       sh->cntdreqs[0], sh->cntdreqs[1], sh->cntdwait[0], sh->cntdwait[1],
+       sh->cntdmaxwait);
+  mlog(SHUF_NOTE, "recvs: local=%d, network=%d", sh->cntrpcinshm,
+       sh->cntrpcinnet);
+  mlog(SHUF_NOTE,
+       "flush: rem=%d, loc_o=%d, loc_r=%d dlvr=%d, waits=%d, strand=%d",
+       sh->cntflush[FLUSH_REMOTEQ], sh->cntflush[FLUSH_LOCAL_ORQ],
+       sh->cntflush[FLUSH_LOCAL_RLQ], sh->cntflush[FLUSH_DELIVER],
+       sh->cntflushwait, sh->cntstranded);
+  mlog(SHUF_NOTE, "oset-size: local_or=%ld, local_rl=%ld, remote=%ld",
+       sh->local_orq.oqs.size(), sh->local_rlq.oqs.size(),
+       sh->remoteq.oqs.size());
+  mlog(SHUF_NOTE, "oset-hitlimit: local_or=%d, local_rl=%d, remote=%d",
+       sh->local_orq.os_senderlimit, sh->local_rlq.os_senderlimit,
+       sh->remoteq.os_senderlimit);
+  mlog(SHUF_NOTE, "local_hgp: nprogress=%" PRIu64 ", ntrigger=%" PRIu64,
+       mercury_progressor_nprogress(sh->hgp_local.mphand),
+       mercury_progressor_ntrigger(sh->hgp_local.mphand));
+  mlog(SHUF_NOTE, "remote_hgp: nprogress=%" PRIu64 ", ntrigger=%" PRIu64,
+       mercury_progressor_nprogress(sh->hgp_remote.mphand),
+       mercury_progressor_ntrigger(sh->hgp_remote.mphand));
+  for (lcv = 0; lcv < 3 ; lcv++) {
+    mlog(SHUF_NOTE, "outqueue-stats: %s", names[lcv]);
+    os = o[lcv];
+    for (oqit = os->oqs.begin() ; oqit != os->oqs.end() ; oqit++) {
+      oq = oqit->second;
+      mlog(SHUF_NOTE, "oq[%d.%d]: reqs=%d/%d, snds=%d, flsnd=%d, "
+                      "waits=%d/%d, fl=%d, mxwait=%d, order=%d",
+      oq->grank, oq->subrank, oq->cntoqreqs[0], oq->cntoqreqs[1],
+      oq->cntoqsends, oq->cntoqflushsend, oq->cntoqwaits[0], oq->cntoqwaits[1],
+      oq->cntoqflushes, oq->cntoqmaxwait, oq->cntoqflushorder);
+    }
+  }
+#endif
+}
+
+/*
  * dumpstats: dump stats to mlog NOTE
  *
  * @param sh the shuffle to dump
@@ -3380,7 +3439,10 @@ hg_return_t shuffle_shutdown(shuffle_t sh) {
   pthread_mutex_destroy(&sh->flushlock);
   delete sh;
   mlog(CLNT_CALL, "shuffer_shutdown: DONE closing log...");
-  shuffle_closelog();
 
+  mlog(SHUF_INFO, "----> LOG CANARY 3: %p <-----", &sh);
+  notify(SHUF_INFO, "----> LOG CANARY 4: %p <-----", &sh);
+
+  shuffle_closelog();
   return(HG_SUCCESS);
 }
